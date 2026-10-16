@@ -6,7 +6,9 @@ base curve, maintain a sourced issuer register, collect daily equity prices,
 estimate an issuer correlation proxy, value one-year rating migrations, and
 simulate correlated portfolio losses with VaR, Expected Shortfall, Monte Carlo
 uncertainty and issuer ES contributions. Implemented stress comparisons cover
-dependence, horizon spreads, recovery and face allocation.
+dependence, horizon spreads, recovery and face allocation. A parameterized
+Quarto report reconstructs the frozen results and clearly distinguishes
+calculation checks from empirical VaR backtesting.
 
 The portfolio design retains five hypothetical five-year zero-coupon exposures
 with a total face value of USD 100 million. These are modeling assumptions,
@@ -267,6 +269,73 @@ and stress configuration are copied under `data/raw/credit_stress/run_.../`.
 Old runs are preserved. See [stress methodology](docs/stress_methodology.md)
 for formulas, invariants, interpretation and replay limitations.
 
+## Render the portfolio report
+
+After stage 05, install the reporting dependencies once and render:
+
+```r
+renv::install(c("knitr", "rmarkdown", "quarto"))
+source("tests/test_var_backtesting.R")
+source("tests/test_credit_report.R")
+source("scripts/06_render_report.R")
+
+renv::snapshot(prompt = FALSE)
+renv::status()
+```
+
+The Quarto command-line application must also be available. The R package does
+not install that application. Recent RStudio installations may supply it;
+check with `quarto::quarto_path()` and use the
+[official installation guide](https://quarto.org/docs/get-started/) if absent.
+No LaTeX installation is needed for this HTML report.
+
+The script deliberately uses `credit_stress_result$snapshot_dir`. In a fresh
+session, run stages 03–05 first or explicitly select the saved directory.
+Stage 06 archives the frozen numeric inputs and templates, independently
+reconstructs state values/losses and recalculates risk tables and allocations.
+It does not download market data or select the newest folder implicitly.
+
+The Polish report includes the problem, dated issuer inputs, dependence matrix,
+simulated loss tail, ES contributions, stress comparisons, analytical-mean
+checks, references and model limitations. One self-contained `credit_metrics.html`
+is saved under a new `data/processed/reports/run_.../` directory, alongside input
+fingerprints, render metadata and numeric report tables. The console prints
+its path. Exact inputs, prepared report data and templates remain under
+`data/raw/reports/run_.../`. Generated reports stay outside Git.
+
+## VaR backtesting status
+
+The exact binomial exception-count test and Kupiec unconditional-coverage test
+are implemented in `R/var_backtesting.R`. The requested rule uses inclusive
+`P(M<=m)` and `P(M>=m)`, each exceeding 5%; that central rule has size at most
+10%. The code also reports 2.5% per tail, for central size at most 5%.
+
+**A realized-loss backtest of this annual CreditMetrics portfolio has not been
+performed.** No corresponding historical forecast/outcome series is supplied.
+Synthetic unit tests and simulated tail frequencies are not empirical evidence.
+By default the report displays an explicit not-performed status, without
+invented p-values. For a discrete VaR, strict exceedance probability can be
+below the nominal tail probability even under a valid conservative quantile.
+
+The empty `config/var_backtest_template.csv` defines an optional dated input.
+Copy and fill it only with documented forecasts/outcomes. Once that evidence
+exists, call the render function after loading the stage-06 modules:
+
+```r
+credit_report_result <- render_credit_portfolio_report(
+  stress_snapshot_dir = credit_stress_result$snapshot_dir,
+  project_dir = ".",
+  backtest_file = "data/raw/var_backtest/observations.csv"
+)
+```
+
+The supplied file must use matching annual horizons, loss units and benchmarks,
+with no future estimation data or overlapping annual periods within a risk
+level. Proxy or synthetic outcomes retain that designation. The adapter tests
+existing forecasts; it does not construct a historical rolling estimator.
+Read [VaR validation methodology](docs/var_backtesting.md) for assumptions,
+inclusive-tail formulas, zero/all-exception cases and limitations.
+
 ## Validate the implementation
 
 Run the offline checks from the project root:
@@ -277,6 +346,8 @@ source("tests/test_issuer_prices.R")
 source("tests/test_migration_valuation.R")
 source("tests/test_credit_simulation.R")
 source("tests/test_credit_stress.R")
+source("tests/test_var_backtesting.R")
+source("tests/test_credit_report.R")
 ```
 
 The synthetic fixtures cover source parsing, date cutoffs, stale and incomplete
@@ -296,6 +367,11 @@ states, reproducible batching, RNG restoration, same-date calibration and replay
 Stress checks verify fixed benchmarks, horizon-only pricing, PSD-preserving
 correlation shocks, allocation budgets, independent shock/ES identities,
 paired uncertainty and complete scenario-archive replay and cleanup.
+Backtesting checks independently enumerate binomial probabilities and rejection
+size, verify Kupiec boundary limits and enforce dated outcome conventions.
+Report checks detect altered losses/benchmarks, preserve provenance and missing
+backtest status, and verify cleanup with an injected render adapter. A real
+Quarto render is a separate environment-dependent smoke check.
 
 ## Repository layout
 
@@ -313,26 +389,34 @@ paired uncertainty and complete scenario-archive replay and cleanup.
 | `R/credit_simulation_pipeline.R` | Dated calibration and risk-run archives |
 | `R/credit_stress.R` | Shock definitions, allocation and paired comparisons |
 | `R/credit_stress_pipeline.R` | Baseline replay and immutable stress archives |
+| `R/var_backtesting.R` | Inclusive exact tails, Kupiec LR and dated input checks |
+| `R/credit_report.R` | Report reconstruction, figures and archived rendering |
 | `config/issuers.csv` | Reviewed issuer inputs and hypothetical portfolio design |
 | `config/transition_source.csv` | Pinned study vintage and review deadline |
 | `config/valuation_assumptions.csv` | Recovery, horizon and NR/spread conventions |
 | `config/simulation_settings.csv` | Scenario count, seed, batching and precision |
 | `config/risk_levels.csv` | Requested VaR/ES confidence levels |
 | `config/stress_scenarios.csv` | Explicit dependence, pricing and allocation cases |
+| `config/var_backtest_template.csv` | Empty contract for documented forecast/outcome pairs |
 | `scripts/01_download_yield_curve.R` | First analysis entry point |
 | `scripts/02_download_issuer_prices.R` | Second analysis entry point |
 | `scripts/03_value_migrations.R` | Third analysis entry point |
 | `scripts/04_simulate_credit_risk.R` | Fourth analysis entry point |
 | `scripts/05_run_stress_tests.R` | Fifth analysis entry point |
+| `scripts/06_render_report.R` | Parameterized HTML report entry point |
+| `reports/` | Quarto source, stylesheet and primary references |
 | `tests/test_fed_yield_curve.R` | Offline checks using synthetic inputs |
 | `tests/test_issuer_prices.R` | Offline calculations and archive integration checks |
 | `tests/test_migration_valuation.R` | Offline parsing, probability and pricing checks |
 | `tests/test_credit_simulation.R` | Analytical tails and simulation integration |
 | `tests/test_credit_stress.R` | Pricing shocks, fixed benchmarks and paired replay |
+| `tests/test_var_backtesting.R` | Exact-tail formulas and Kupiec boundary checks |
+| `tests/test_credit_report.R` | Report reconstruction, provenance and archive checks |
 | `docs/data_sources.md` | Sources, units, freshness policy, and limitations |
 | `docs/model_methodology.md` | Equations, loss benchmarks and model assumptions |
 | `docs/simulation_methodology.md` | Dependence, tail formulas and MC uncertainty |
 | `docs/stress_methodology.md` | Stress conventions and comparison interpretation |
+| `docs/var_backtesting.md` | Empirical-data requirements and exception-test conventions |
 | `data/raw/` | Original source vintages, generated locally |
 | `data/processed/` | Validated curves and provenance, generated locally |
 
@@ -340,7 +424,8 @@ See [data sources and conventions](docs/data_sources.md) for details.
 
 ## Next implementation stages
 
-1. Build a Quarto report with assumptions, results and limitations; commit the
-   reviewed renv environment and automate offline checks in GitHub Actions.
+1. Commit the user's reviewed renv environment and automate offline checks in
+   GitHub Actions. Establish a documented historical validation dataset before
+   interpreting empirical backtest results.
 2. Compare alternative transition/dependence calibrations, more detailed credit
    term structures and empirical recovery evidence, with model-risk analysis.

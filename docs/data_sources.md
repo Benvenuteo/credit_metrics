@@ -317,5 +317,28 @@ results remain excluded from Git; tests contain synthetic observations only.
 
 See [stress methodology](stress_methodology.md) for shock timing, benchmark
 consistency, paired Monte Carlo errors and concentration interpretation.
-A portfolio report, more detailed credit term structures, empirical recovery
-calibration and alternative transition/dependence models remain further work.
+## Implemented: frozen-input portfolio reporting and optional backtest data
+
+Stage 06 produces a self-contained Quarto HTML report from one explicit stress
+snapshot. It verifies archived conditional values, benchmarks, destination
+states and losses, then recalculates risk tables and issuer allocations.
+Sources and templates are copied with fingerprints; prepared numeric report
+data and render metadata preserve the selected analysis and software versions.
+No market observations are refreshed during rendering. The observation date,
+original cutoff and generation timestamp have different meanings and remain
+visible. Generated reports and provider-derived data remain excluded from Git.
+
+No historical realized-loss backtest is supplied for the hypothetical annual
+portfolio. The report says so. An optional CSV can contain documented forecasts
+and subsequent annual outcomes; a template records dates, estimation-window
+size, units, benchmark and observed/proxy/synthetic provenance. Missing values,
+future estimation dates, mismatched benchmarks and overlapping annual periods
+within one confidence level are rejected. Input declarations do not themselves
+establish historical information availability or independence.
+
+The implemented exact binomial/Kupiec functions are calculation tools, not a
+source of observed outcomes. Their synthetic tests do not certify predictive
+accuracy. See [VaR backtesting](var_backtesting.md) for the two central-tail
+conventions, discrete-quantile caveat and required historical evidence.
+More detailed credit term structures, empirical recovery calibration and
+alternative transition/dependence models remain further work.

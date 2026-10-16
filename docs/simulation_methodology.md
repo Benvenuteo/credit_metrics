@@ -172,6 +172,11 @@ matrices, default/upgrade ordering, zero/one probabilities, atom weights,
 binomial coverage, issuer allocation, RNG restoration, batching, date alignment,
 archive replay, stale inputs and cleanup after failures. Fixtures are synthetic.
 
+These checks validate calculations, not out-of-sample forecast accuracy. The
+implemented [VaR exception tests](var_backtesting.md) require a separate dated
+forecast/realized-loss series. The report does not apply Kupiec or binomial
+coverage tests to the simulator's own scenarios and call that empirical evidence.
+
 ## Primary references
 
 - Gupton, Finger and Bhatia, CreditMetrics Technical Document (1997):
