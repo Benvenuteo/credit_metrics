@@ -1,5 +1,6 @@
 # Purpose: verify report reconstruction, tamper checks and archive atomicity.
-# The render adapter is synthetic; a real Quarto smoke render is separate.
+# The default adapter is synthetic. CREDIT_METRICS_TEST_RENDER=true additionally
+# renders both report branches with the actual Quarto CLI, without market data.
 
 local({
   for (module in c("issuer_registry.R", "issuer_prices.R",
@@ -12,6 +13,7 @@ local({
   fixture <- tempfile("report_tests_")
   dir.create(fixture)
   on.exit(unlink(fixture, recursive = TRUE), add = TRUE)
+  render_real <- identical(Sys.getenv("CREDIT_METRICS_TEST_RENDER"), "true")
   checks <- 0L
   check <- function(condition, label) {
     if (!isTRUE(condition)) stop(paste("FAILED:", label), call. = FALSE)
@@ -44,7 +46,8 @@ local({
   dimnames(correlation) <- list(registry$issuer_id, registry$issuer_id)
   inputs <- list(registry = registry, curve = curve, spreads = spreads,
                    transition = transition,
-                   assumptions = list(recovery_rate = 0.4, horizon_years = 1),
+                   assumptions = list(recovery_rate = 0.4, horizon_years = 1,
+                                        nr_policy = "condition_on_observed"),
                    metadata = list(market_observation_date = date))
   settings <- data.frame(n_scenarios = 1000L, batch_size = 177L, seed = 12L,
                           mc_confidence_level = 0.95, min_nominal_tail = 40L)
@@ -109,7 +112,7 @@ local({
   file.copy(file.path("R", "credit_report.R"),
               file.path(root, "R", "credit_report.R"))
   calls <- 0L
-  fake_renderer <- function(input, output_file, execute_params,
+  test_renderer <- function(input, output_file, execute_params,
                               execute_dir, ...) {
     prepared <- readRDS(execute_params$report_data_file)
     check(length(prepared$baseline_losses) == 1000L,
@@ -117,6 +120,32 @@ local({
     check(file.exists(input) && file.exists(execute_params$helper_file),
           "the renderer uses archived templates and helper code")
     calls <<- calls + 1L
+    if (render_real) {
+      quarto::quarto_render(input = input, output_file = output_file,
+                             execute_params = execute_params,
+                             execute_dir = execute_dir, ...)
+      page <- xml2::read_html(file.path(execute_dir, output_file))
+      images <- xml2::xml_find_all(page, "//img")
+      check(length(images) == 4L &&
+              all(startsWith(xml2::xml_attr(images, "src"), "data:image/")),
+            "the actual HTML embeds all four report figures")
+      assets <- c(
+        xml2::xml_attr(xml2::xml_find_all(page, "//script[@src]|//img[@src]"),
+                        "src"),
+        xml2::xml_attr(xml2::xml_find_all(page,
+                        "//link[@rel='stylesheet'][@href]"), "href")
+      )
+      check(all(startsWith(assets, "data:")),
+            "the actual HTML requires no external asset files")
+      status <- xml2::xml_text(xml2::xml_find_first(page,
+        "//*[contains(concat(' ', normalize-space(@class), ' '),
+                       ' validation-status ')]"))
+      expected <- if (is.null(prepared$backtest)) "niewykonany." else
+        "Demonstracja na danych syntetycznych"
+      check(grepl(expected, status, fixed = TRUE),
+            "the actual report preserves missing or synthetic evidence status")
+      return(invisible(NULL))
+    }
     writeLines(paste0("<!doctype html><html><body>",
                        "Synthetic render-adapter archive test. ",
                        "This file is not an empirical model validation. ",
@@ -124,7 +153,7 @@ local({
                  file.path(execute_dir, output_file))
   }
   result <- render_credit_portfolio_report(snapshot, root, primary_level = 0.95,
-                                             renderer = fake_renderer)
+                                             renderer = test_renderer)
   check(calls == 1L && file.exists(result$html_file),
         "the completed render is saved in its own report snapshot")
   check(result$backtest_status == "not_performed",
@@ -147,7 +176,7 @@ local({
   backtest_path <- file.path(fixture, "backtest.csv")
   readr::write_csv(backtest, backtest_path)
   with_backtest <- render_credit_portfolio_report(
-    snapshot, root, backtest_path, 0.95, fake_renderer,
+    snapshot, root, backtest_path, 0.95, test_renderer,
     backtest_evaluation_date = as.Date("2021-01-03")
   )
   check(with_backtest$backtest_status == "synthetic_example",

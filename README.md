@@ -1,7 +1,9 @@
 # Credit Portfolio Risk Analytics in R
 
-An ongoing rebuild of an academic CreditMetrics project into a reproducible
-credit portfolio risk analysis. Implemented stages import the USD Treasury
+[![R validation](https://github.com/Benvenuteo/credit_metrics/actions/workflows/r-tests.yml/badge.svg?branch=main)](https://github.com/Benvenuteo/credit_metrics/actions/workflows/r-tests.yml)
+
+A reproducible credit portfolio risk study rebuilt from an academic
+CreditMetrics project. The analysis imports the USD Treasury
 base curve, maintain a sourced issuer register, collect daily equity prices,
 estimate an issuer correlation proxy, value one-year rating migrations, and
 simulate correlated portfolio losses with VaR, Expected Shortfall, Monte Carlo
@@ -17,9 +19,10 @@ prices supply a dependence proxy; they do not value these debt exposures.
 
 ## Read the portfolio report
 
-**[Read the HTML report](docs/index.html)** — a self-contained report in Polish,
-including charts, risk estimates, issuer contributions and stress comparisons.
-On GitHub, use **Download raw file**, then open the downloaded HTML in a browser.
+**[Read the report online](https://benvenuteo.github.io/credit_metrics/)** —
+a report in Polish, including charts, risk estimates, issuer contributions and
+stress comparisons. The [self-contained HTML file](docs/index.html) can also be
+downloaded with GitHub's **Download raw file** button and opened in a browser.
 All figures and styles are embedded; R and Quarto are not needed to read it.
 
 This committed snapshot uses market observations dated **2026-10-09**, with
@@ -27,34 +30,35 @@ an analysis cutoff of **2026-10-15** and 1,000,000 scenarios per case. Its dates
 remain visible in the report. Computational checks are complete; an empirical
 realized-loss VaR backtest has not been performed.
 
+## Restore the project environment
+
+Use **R 4.6.1** and open `credit_metrics.Rproj`. The committed `.Rprofile`
+activates renv automatically. From the project root, run:
+
+```r
+renv::restore(prompt = FALSE)
+renv::status()
+source("scripts/run_tests.R", encoding = "UTF-8")
+```
+
+`renv.lock` records the tested package versions against the public CRAN snapshot
+dated 2026-10-16. Restore this environment before running the analysis; a fresh
+clone does not need `renv::init()` or separate package installation commands.
+Opening the project and running the offline tests do not download market data.
+Package restoration needs internet access. The Quarto CLI is a separate tool;
+the tested reporting version is **1.10.19**.
+
+See [reproducibility and CI](docs/reproducibility.md) for fresh-clone commands,
+platform requirements and how to update dependencies deliberately.
+
 ## Run the first data import
 
 Open the cloned `credit_metrics` RStudio project. Run these commands in the
 R console from the project root:
 
 ```r
-# Install only if these packages are not already in the project library.
-renv::install(c("httr2", "readr"))
-
 source("scripts/01_download_yield_curve.R")
-
-# Detect dependencies from the saved R files, then record their versions.
-renv::settings$snapshot.type("implicit")
-renv::snapshot(prompt = FALSE)
-renv::status()
 ```
-
-For a fresh clone without an existing renv environment, first run:
-
-```r
-install.packages("renv", repos = "https://cloud.r-project.org")
-renv::init(bare = TRUE, restart = FALSE)
-```
-
-If a reviewed `renv.lock` is already present, use `renv::restore()` to recreate
-its environment instead of initializing a new one. Commit your verified
-lockfile, activation files, project settings, and source code to preserve
-the working environment.
 
 The import downloads the current Fed CSV, selects the latest eligible date,
 validates freshness and completeness, and prints the 1-30 year curve. It also
@@ -91,12 +95,7 @@ It does not provide historical, point-in-time availability of revised data.
 From the same project root, run:
 
 ```r
-renv::install("quantmod")
 source("scripts/02_download_issuer_prices.R")
-
-renv::settings$snapshot.type("implicit")
-renv::snapshot(prompt = FALSE)
-renv::status()
 ```
 
 The script reads `config/issuers.csv`, collects three calendar years of daily
@@ -150,13 +149,8 @@ publishing final credit-risk results.
 From the project root, run:
 
 ```r
-# jsonlite may already be installed as a quantmod dependency.
-renv::install(c("xml2", "jsonlite"))
 source("tests/test_migration_valuation.R")
 source("scripts/03_value_migrations.R")
-
-renv::snapshot(prompt = FALSE)
-renv::status()
 ```
 
 This entry point downloads fresh Fed and FRED inputs and the pinned S&P annual
@@ -202,9 +196,6 @@ After stage 03 in the same R session, run:
 ```r
 source("tests/test_credit_simulation.R")
 source("scripts/04_simulate_credit_risk.R")
-
-renv::snapshot(prompt = FALSE)
-renv::status()
 ```
 
 No new package is required beyond the earlier stages. The script uses the
@@ -283,16 +274,12 @@ for formulas, invariants, interpretation and replay limitations.
 
 ## Render the portfolio report
 
-After stage 05, install the reporting dependencies once and render:
+After stage 05, render using the restored reporting dependencies:
 
 ```r
-renv::install(c("knitr", "rmarkdown", "quarto"))
 source("tests/test_var_backtesting.R")
 source("tests/test_credit_report.R")
 source("scripts/06_render_report.R")
-
-renv::snapshot(prompt = FALSE)
-renv::status()
 ```
 
 The Quarto command-line application must also be available. The R package does
@@ -373,14 +360,15 @@ inclusive-tail formulas, zero/all-exception cases and limitations.
 Run the offline checks from the project root:
 
 ```r
-source("tests/test_fed_yield_curve.R")
-source("tests/test_issuer_prices.R")
-source("tests/test_migration_valuation.R")
-source("tests/test_credit_simulation.R")
-source("tests/test_credit_stress.R")
-source("tests/test_var_backtesting.R")
-source("tests/test_credit_report.R")
+source("scripts/run_tests.R", encoding = "UTF-8")
 ```
+
+The same runner is used by GitHub Actions on Ubuntu 24.04 and Windows 2025.
+The workflow restores `renv.lock`, checks dependency synchronization, parses
+all R source files, and runs the seven offline suites. Linux also installs the
+pinned Quarto CLI and executes actual renders of both report validation
+branches using synthetic fixtures. These CI reports are temporary test outputs;
+they do not replace the committed portfolio report or download market prices.
 
 The synthetic fixtures cover source parsing, date cutoffs, stale and incomplete
 data, percent-to-decimal conversion, continuous discounting, valid negative
@@ -402,13 +390,17 @@ paired uncertainty and complete scenario-archive replay and cleanup.
 Backtesting checks independently enumerate binomial probabilities and rejection
 size, verify Kupiec boundary limits and enforce dated outcome conventions.
 Report checks detect altered losses/benchmarks, preserve provenance and missing
-backtest status, and verify cleanup with an injected render adapter. A real
-Quarto render is a separate environment-dependent smoke check.
+backtest status, and verify cleanup with an injected render adapter. The
+optional real-render mode checks embedded figures, self-contained assets and
+the missing/synthetic validation labels against the actual generated HTML.
 
 ## Repository layout
 
 | Path | Purpose |
 | --- | --- |
+| `credit_metrics.Rproj` | UTF-8 RStudio project without workspace restoration |
+| `.Rprofile`, `renv/`, `renv.lock` | Project activation and tested package versions |
+| `.github/workflows/r-tests.yml` | Dependency checks, cross-platform tests and HTML renders |
 | `R/fed_yield_curve.R` | Reusable import and validation functions |
 | `R/issuer_registry.R` | Rating categories and sourced registry validation |
 | `R/issuer_prices.R` | Price import, alignment, correlation and snapshots |
@@ -436,6 +428,7 @@ Quarto render is a separate environment-dependent smoke check.
 | `scripts/04_simulate_credit_risk.R` | Fourth analysis entry point |
 | `scripts/05_run_stress_tests.R` | Fifth analysis entry point |
 | `scripts/06_render_report.R` | Parameterized HTML report entry point |
+| `scripts/run_tests.R` | One command for all offline test suites |
 | `reports/` | Quarto source, stylesheet and primary references |
 | `docs/index.html` | Reviewed, self-contained portfolio report snapshot |
 | `docs/.nojekyll` | Serve the existing report when GitHub Pages is enabled |
@@ -451,15 +444,15 @@ Quarto render is a separate environment-dependent smoke check.
 | `docs/simulation_methodology.md` | Dependence, tail formulas and MC uncertainty |
 | `docs/stress_methodology.md` | Stress conventions and comparison interpretation |
 | `docs/var_backtesting.md` | Empirical-data requirements and exception-test conventions |
+| `docs/reproducibility.md` | Environment restoration, CI and dependency updates |
 | `data/raw/` | Original source vintages, generated locally |
 | `data/processed/` | Validated curves and provenance, generated locally |
 
 See [data sources and conventions](docs/data_sources.md) for details.
 
-## Next implementation stages
+## Research extensions
 
-1. Commit the user's reviewed renv environment and automate offline checks in
-   GitHub Actions. Establish a documented historical validation dataset before
-   interpreting empirical backtest results.
+1. Establish a documented historical validation dataset before interpreting
+   empirical backtest results.
 2. Compare alternative transition/dependence calibrations, more detailed credit
    term structures and empirical recovery evidence, with model-risk analysis.
