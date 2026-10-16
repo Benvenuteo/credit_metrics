@@ -11,8 +11,8 @@ originally bought in 2023.
 The implementation must preserve probability mass, distinguish default from
 withdrawal, value the correct remaining maturity, separate carry from migration
 loss, and retain dated source evidence. Tests check independent pricing
-identities and the zero-rate `PD * LGD * face` limit. Tail risk and portfolio
-variance require a later dependence/simulation stage.
+identities and the zero-rate `PD * LGD * face` limit. The implemented
+[simulation stage](simulation_methodology.md) adds dependence and tail risk.
 
 ## Data and common market date
 
@@ -34,7 +34,7 @@ For example, a requested cutoff of 2026-10-15 can have a latest Fed observation
 of 2026-10-09 and a latest OAS observation of 2026-10-15. Both valuation inputs
 then use **2026-10-09**, which remains explicit in the output metadata. This
 does not assert that October 15 prices were used. The equity-correlation sample
-must be aligned to the selected valuation date in the later simulation stage.
+is aligned to the selected valuation date in the simulation stage.
 
 ## Historical migration probabilities
 
@@ -132,7 +132,8 @@ not a forecast of realized future interest rates.
 Different benchmarks answer different questions. Gains and negative benchmark
 losses are retained. Nothing is clipped to zero. In a zero-rate/zero-spread
 default-only limit, expected credit loss reduces to `PD * (1-R) * N`.
-Portfolio VaR and Expected Shortfall are not supplied by these mean calculations.
+Portfolio VaR and Expected Shortfall are supplied separately by correlated
+simulation; these exact means serve as its analytical validation benchmark.
 
 ## Sources and reproducibility
 

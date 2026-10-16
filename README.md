@@ -3,9 +3,9 @@
 An ongoing rebuild of an academic CreditMetrics project into a reproducible
 credit portfolio risk analysis. Implemented stages import the USD Treasury
 base curve, maintain a sourced issuer register, collect daily equity prices,
-estimate an issuer correlation proxy, and value one-year rating migrations.
-Correlated portfolio-loss simulation and VaR/Expected Shortfall are subsequent
-stages.
+estimate an issuer correlation proxy, value one-year rating migrations, and
+simulate correlated portfolio losses with VaR, Expected Shortfall, Monte Carlo
+uncertainty and issuer ES contributions.
 
 The portfolio design retains five hypothetical five-year zero-coupon exposures
 with a total face value of USD 100 million. These are modeling assumptions,
@@ -180,6 +180,52 @@ the NR assumptions and the limitations of the spread/recovery approximations.
 Review `config/transition_source.csv` when a newer annual study is published;
 the pinned descriptor has an explicit review deadline.
 
+## Run correlated portfolio risk
+
+After stage 03 in the same R session, run:
+
+```r
+source("tests/test_credit_simulation.R")
+source("scripts/04_simulate_credit_risk.R")
+
+renv::snapshot(prompt = FALSE)
+renv::status()
+```
+
+No new package is required beyond the earlier stages. The script uses the
+explicit `migration_valuation_result$snapshot_dir`; it never guesses the newest
+directory. In a fresh session, run stage 03 first, or set that field to the
+saved directory you deliberately selected. Its market date must be at most
+14 calendar days before the current completed-day cutoff.
+
+The pipeline downloads a fresh three-year equity sample ending **on the saved
+valuation date**, then recomputes and validates the common-sample correlation.
+It checks that issuer identities, ratings and exposures match the valuation.
+An equity run previously ending on a later date is not reused implicitly.
+
+Defaults in `config/simulation_settings.csv` and `config/risk_levels.csv` use
+1,000,000 Gaussian migration scenarios, seed 20261016, batches of 50,000, and
+95%/99%/99.9% risk levels. The smallest nominal tail contains 1,000 scenarios;
+this is a precision policy, not a guarantee of stable tail estimates.
+
+Loss is the **no-migration horizon value minus simulated horizon value**, in
+USD millions. VaR uses the inverse empirical CDF. ES averages exactly the
+requested worst-tail probability, sharing any needed mass at VaR across tied
+scenarios. Gains remain negative. Issuer ES contributions sum to portfolio ES.
+
+The console prints VaR/ES and diagnostics. A new
+`data/processed/credit_simulation/run_.../` contains risk estimates, binomial
+VaR intervals, approximate ES simulation errors, issuer ES contributions,
+marginal/correlation diagnostics, nested convergence checks, dated calibration
+returns, metadata, and compressed scenario/input RDS files. Exact model/config
+copies are retained under `data/raw/credit_simulation/run_.../`.
+
+Uncertainty intervals describe finite Monte Carlo sampling only. They do not
+cover uncertain migrations, ratings, correlations, spreads or recovery. ES
+normal intervals are omitted when the VaR rank interval spans multiple values.
+See [simulation methodology](docs/simulation_methodology.md) for the formulas,
+precision limits, replay procedure and independent analytical checks.
+
 ## Validate the implementation
 
 Run the offline checks from the project root:
@@ -188,6 +234,7 @@ Run the offline checks from the project root:
 source("tests/test_fed_yield_curve.R")
 source("tests/test_issuer_prices.R")
 source("tests/test_migration_valuation.R")
+source("tests/test_credit_simulation.R")
 ```
 
 The synthetic fixtures cover source parsing, date cutoffs, stale and incomplete
@@ -201,6 +248,9 @@ Migration checks cover both public HTML layouts, exclusion of standard
 deviations and later-year tables, explicit NR assumptions, rounding limits,
 absorbing default, forward discounting, recovery bounds, the `PD * LGD * face`
 limit, same-date market inputs, immutable valuation archives and failure cleanup.
+Simulation checks include exact discrete-tail examples, binomial rank coverage,
+independent two-issuer enumeration, singular dependence, probability-zero/one
+states, reproducible batching, RNG restoration, same-date calibration and replay.
 
 ## Repository layout
 
@@ -213,17 +263,25 @@ limit, same-date market inputs, immutable valuation archives and failure cleanup
 | `R/rating_spreads.R` | FRED OAS parsing and Treasury/spread date alignment |
 | `R/migration_valuation.R` | Conditional values and exact marginal expectations |
 | `R/migration_pipeline.R` | Input retrieval, provenance and valuation snapshots |
+| `R/credit_simulation.R` | Named Gaussian dependence and batched migrations |
+| `R/credit_risk_measures.R` | Discrete VaR/ES, MC uncertainty and allocations |
+| `R/credit_simulation_pipeline.R` | Dated calibration and risk-run archives |
 | `config/issuers.csv` | Reviewed issuer inputs and hypothetical portfolio design |
 | `config/transition_source.csv` | Pinned study vintage and review deadline |
 | `config/valuation_assumptions.csv` | Recovery, horizon and NR/spread conventions |
+| `config/simulation_settings.csv` | Scenario count, seed, batching and precision |
+| `config/risk_levels.csv` | Requested VaR/ES confidence levels |
 | `scripts/01_download_yield_curve.R` | First analysis entry point |
 | `scripts/02_download_issuer_prices.R` | Second analysis entry point |
 | `scripts/03_value_migrations.R` | Third analysis entry point |
+| `scripts/04_simulate_credit_risk.R` | Fourth analysis entry point |
 | `tests/test_fed_yield_curve.R` | Offline checks using synthetic inputs |
 | `tests/test_issuer_prices.R` | Offline calculations and archive integration checks |
 | `tests/test_migration_valuation.R` | Offline parsing, probability and pricing checks |
+| `tests/test_credit_simulation.R` | Analytical tails and simulation integration |
 | `docs/data_sources.md` | Sources, units, freshness policy, and limitations |
 | `docs/model_methodology.md` | Equations, loss benchmarks and model assumptions |
+| `docs/simulation_methodology.md` | Dependence, tail formulas and MC uncertainty |
 | `data/raw/` | Original source vintages, generated locally |
 | `data/processed/` | Validated curves and provenance, generated locally |
 
@@ -231,11 +289,8 @@ See [data sources and conventions](docs/data_sources.md) for details.
 
 ## Next implementation stages
 
-1. Align the equity correlation sample to the valuation date and implement
-   correlated migrations, portfolio-loss simulation and discrete-tail
-   VaR/Expected Shortfall, with analytical checks and Monte Carlo uncertainty.
-2. Compare concentration, correlation, spread and recovery stress scenarios.
+1. Compare concentration, correlation, spread and recovery stress scenarios.
    Test more detailed credit curves, recovery evidence and alternative
    geographic or regime-specific transition calibrations.
-3. Build a Quarto report with assumptions, results and limitations; commit the
+2. Build a Quarto report with assumptions, results and limitations; commit the
    reviewed renv environment and automate offline checks in GitHub Actions.

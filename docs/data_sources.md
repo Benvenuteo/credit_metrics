@@ -12,8 +12,8 @@
 - Discount factor at maturity `t`: `exp(-zero_rate_continuous * t)`.
 
 These are fitted Treasury zero-coupon yields. They form the USD base curve;
-they are not corporate rating-specific curves or credit spreads. Forward
-curves and credit spreads must be introduced in the valuation stage.
+they are not corporate rating-specific curves or credit spreads. The valuation
+stage combines forward Treasury rates with explicit rating spread proxies.
 
 The observations are daily, but the provider normally posts updated data
 once per week, typically on Tuesday through the previous Friday. A download
@@ -98,8 +98,8 @@ does not make a historic announcement a guaranteed current rating.
 
 Full S&P notches map to broad `AAA`, `AA`, `A`, `BBB`, `BB`, `B`, `CCC/C`, `D`
 buckets. `SD` maps to `D`. `NR` and unknown notations are rejected, rather than
-being ordered below default. The transition-matrix stage still has to specify
-and validate the treatment of withdrawn ratings and the default state.
+being ordered below default. The transition-matrix stage explicitly specifies
+and validates the treatment of withdrawn ratings and the default state.
 
 ## Implemented: daily equity prices
 
@@ -160,8 +160,8 @@ All Pearson correlations use exactly the same complete sample, avoiding
 inconsistent pairwise samples. Constant return series are rejected. Validate
 finite entries, symmetry, unit diagonal, bounds and a minimum eigenvalue of
 at least `-1e-8`. No nearest-positive-definite repair is applied silently.
-A singular positive-semidefinite matrix is accepted; the later simulation
-algorithm must support it or make any regularization choice explicit.
+A singular positive-semidefinite matrix is accepted. Simulation uses an
+eigenvalue factor, with only numerical roundoff handled explicitly and audited.
 
 Equity-return correlation is a modeling proxy for issuer dependence. It does
 not directly measure latent asset or default correlation. Sensitivity to the
@@ -193,8 +193,8 @@ archived vintages and dated rating histories.
 
 Fed and equity sources have different publication schedules. Their individual
 observation dates remain explicit. The valuation stage below aligns Treasury
-and OAS dates; the equity sample still needs to be aligned to that market date
-when introducing correlated simulation.
+and OAS dates; the simulation stage downloads a new equity calibration sample
+ending exactly on that shared market date.
 
 ## Implemented: dated transition matrix
 
@@ -269,8 +269,30 @@ market inputs and source fingerprints. `model_inputs.rds` preserves full
 precision for later simulation. Failed runs remove their partial valuation
 snapshot, while previously successful independent Fed imports remain valid.
 
-See [model methodology](model_methodology.md) for forward discounting, benchmark
-definitions and the treatment of publication lags. Correlated simulation,
-tail-risk validation and a portfolio report remain subsequent work. More
-detailed credit term structures and empirical recovery calibration are further
-model improvements.
+## Implemented: correlated simulation inputs and outputs
+
+Stage 04 takes one explicitly selected stage-03 `model_inputs.rds`, checks its
+market date against a completed-day cutoff, and requests equity prices only
+through that date. A fresh manual rating review must still pass stage 02's
+controls. Issuer identities, rating notches/buckets, face amounts and maturities
+must agree with the saved valuation; otherwise rebuild stage 03 first.
+
+The final common return sample must contain at least 500 observations and end
+exactly on the valuation date. The matrix is independently recomputed from
+those dated returns and compared with the price adapter's matrix. Later equity
+observations cannot enter the calibration. A current-vintage historical cutoff
+still does not establish point-in-time information availability.
+
+Each risk run archives exact valuation/config copies with fingerprints and
+retains a reference to the independently archived equity source export. Outputs
+include input/used/simulated-latent correlations, dated common returns, marginal
+migration frequencies, analytical and simulated means, nested convergence
+estimates, VaR/ES, issuer ES contributions, RNG settings and R/platform/LAPACK
+versions. RDS files retain full-precision inputs, losses and destination states.
+Generated observations and results remain excluded from Git.
+
+See [model methodology](model_methodology.md) for valuation conventions and
+[simulation methodology](simulation_methodology.md) for dependence, loss and
+uncertainty definitions. Stress comparisons and a portfolio report remain
+subsequent work. More detailed credit term structures, empirical recovery
+calibration and alternative dependence models are further model improvements.
