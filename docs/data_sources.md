@@ -312,8 +312,9 @@ The chosen +100 bps, 20% recovery and correlation-mixture sizes are modeling
 sensitivities. They are not downloaded current observations, fitted macro
 forecasts or regulatory scenarios. Original/equal/weakest-group allocations
 refer to hypothetical face amounts. Their common total budget does not imply
-equal inception value or equal risk. Provider-derived inputs and generated
-results remain excluded from Git; tests contain synthetic observations only.
+equal inception value or equal risk. Provider-derived input files and full
+generated result archives remain excluded from Git. A reviewed HTML summary
+is committed at `docs/index.html`; test fixtures contain synthetic observations.
 
 See [stress methodology](stress_methodology.md) for shock timing, benchmark
 consistency, paired Monte Carlo errors and concentration interpretation.
@@ -326,7 +327,11 @@ Sources and templates are copied with fingerprints; prepared numeric report
 data and render metadata preserve the selected analysis and software versions.
 No market observations are refreshed during rendering. The observation date,
 original cutoff and generation timestamp have different meanings and remain
-visible. Generated reports and provider-derived data remain excluded from Git.
+visible. Generated run directories and provider-derived input files remain
+excluded from Git. The selected portfolio deliverable at `docs/index.html` is
+an intentional exception: it contains the dated analysis, summary tables and
+embedded figures. It is a frozen report, not a live market-data feed. Its
+Quarto source remains in `reports/credit_metrics.qmd`.
 
 No historical realized-loss backtest is supplied for the hypothetical annual
 portfolio. The report says so. An optional CSV can contain documented forecasts

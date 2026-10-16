@@ -15,6 +15,18 @@ with a total face value of USD 100 million. These are modeling assumptions,
 not a list of real traded bonds or a continuation of a 2023 trade. Equity
 prices supply a dependence proxy; they do not value these debt exposures.
 
+## Read the portfolio report
+
+**[Read the HTML report](docs/index.html)** — a self-contained report in Polish,
+including charts, risk estimates, issuer contributions and stress comparisons.
+On GitHub, use **Download raw file**, then open the downloaded HTML in a browser.
+All figures and styles are embedded; R and Quarto are not needed to read it.
+
+This committed snapshot uses market observations dated **2026-10-09**, with
+an analysis cutoff of **2026-10-15** and 1,000,000 scenarios per case. Its dates
+remain visible in the report. Computational checks are complete; an empirical
+realized-loss VaR backtest has not been performed.
+
 ## Run the first data import
 
 Open the cloned `credit_metrics` RStudio project. Run these commands in the
@@ -301,7 +313,27 @@ checks, references and model limitations. One self-contained `credit_metrics.htm
 is saved under a new `data/processed/reports/run_.../` directory, alongside input
 fingerprints, render metadata and numeric report tables. The console prints
 its path. Exact inputs, prepared report data and templates remain under
-`data/raw/reports/run_.../`. Generated reports stay outside Git.
+`data/raw/reports/run_.../`. Generated run directories stay outside Git;
+the reviewed portfolio snapshot is committed separately at `docs/index.html`.
+
+After reviewing a newly rendered report, refresh the portfolio copy explicitly:
+
+```r
+if (!file.copy(credit_report_result$html_file, "docs/index.html",
+               overwrite = TRUE)) {
+  stop("Could not update the portfolio report.")
+}
+```
+
+Review the changed HTML and update the snapshot dates above before committing.
+This copy step does not refresh market data; rerun the preceding analysis stages
+when new observations are required.
+
+To display the report as a website after merging, open the repository's
+**Settings > Pages**, choose **Deploy from a branch**, select **main** and
+**/docs**, then save. The committed `docs/.nojekyll` serves the existing HTML
+without rebuilding it. See the
+[GitHub Pages publishing guide](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site).
 
 ## VaR backtesting status
 
@@ -405,6 +437,8 @@ Quarto render is a separate environment-dependent smoke check.
 | `scripts/05_run_stress_tests.R` | Fifth analysis entry point |
 | `scripts/06_render_report.R` | Parameterized HTML report entry point |
 | `reports/` | Quarto source, stylesheet and primary references |
+| `docs/index.html` | Reviewed, self-contained portfolio report snapshot |
+| `docs/.nojekyll` | Serve the existing report when GitHub Pages is enabled |
 | `tests/test_fed_yield_curve.R` | Offline checks using synthetic inputs |
 | `tests/test_issuer_prices.R` | Offline calculations and archive integration checks |
 | `tests/test_migration_valuation.R` | Offline parsing, probability and pricing checks |
