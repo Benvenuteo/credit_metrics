@@ -1,0 +1,77 @@
+name: R validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-tests:
+    name: Offline tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    env:
+      TZ: UTC
+      RENV_CONFIG_AUTO_SNAPSHOT: "FALSE"
+    steps:
+      - name: Check out the project
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install the R version recorded in renv.lock
+        uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
+        with:
+          r-version: renv
+          use-public-rspm: true
+
+      - name: Install Linux package system requirements
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake libcurl4-openssl-dev libssl-dev libuv1-dev \
+            libx11-dev libxml2-dev
+
+      - name: Restore the locked package environment
+        uses: r-lib/actions/setup-renv@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
+
+      - name: Check dependency synchronization
+        shell: Rscript {0}
+        run: |
+          status <- renv::status()
+          if (!isTRUE(status$synchronized)) {
+            stop("Project dependencies differ from renv.lock.")
+          }
+          print(sessionInfo())
+
+      - name: Run offline calculation and archive checks
+        run: Rscript scripts/run_tests.R
+
+      - name: Install the tested Quarto CLI
+        if: runner.os == 'Linux'
+        uses: quarto-dev/quarto-actions/setup@8a96df13519ee81fd526f2dfca5962811136661b # v2
+        with:
+          version: "1.10.19"
+
+      - name: Render both report validation branches on synthetic inputs
+        if: runner.os == 'Linux'
+        env:
+          CREDIT_METRICS_TEST_RENDER: "true"
+        run: Rscript tests/test_credit_report.R
+
+      - name: Check that validation preserved the committed environment
+        shell: bash
+        run: git diff --exit-code -- renv.lock renv/settings.json
