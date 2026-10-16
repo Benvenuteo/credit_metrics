@@ -1,0 +1,2 @@
+horizon_years,recovery_rate,nr_policy,spread_policy,recovery_note
+1,0.4,condition_on_observed,flat_index_oas_continuous_proxy,Model assumption: fixed fraction of face paid at the one-year horizon. Not a current empirical recovery estimate or a claim about actual bond seniority.

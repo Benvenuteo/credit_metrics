@@ -1,0 +1,389 @@
+---
+title: "Ryzyko kredytowe portfela"
+subtitle: "CreditMetrics · migracje ratingów, VaR, ES i analiza wrażliwości"
+author: "Krzysztof Włosek"
+lang: pl
+format:
+  html:
+    theme: cosmo
+    css: report.css
+    toc: true
+    toc-depth: 2
+    title-block-banner: "#112f43"
+    embed-resources: true
+    code-fold: true
+    code-summary: "Pokaż kod"
+    fig-format: png
+    fig-dpi: 160
+    smooth-scroll: true
+bibliography: references.bib
+execute:
+  echo: false
+  warning: false
+  message: false
+  error: false
+  cache: false
+params:
+  report_data_file: null
+  helper_file: null
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(knitr)
+library(htmltools)
+if (is.null(params$report_data_file) || is.null(params$helper_file)) {
+  stop("Render with scripts/06_render_report.R and an explicit stage-05 snapshot.")
+}
+source(params$helper_file)
+report <- readRDS(params$report_data_file)
+alpha <- report$primary_level
+primary <- report$risk[report$risk$scenario_id == "baseline" &
+                        report$risk$confidence_level == alpha, ]
+portfolio <- report$portfolios[report$portfolios$scenario_id == "baseline", ]
+label_alpha <- paste0(report_number(100 * alpha, 1), "%")
+table_report <- function(x, caption = NULL) {
+  knitr::kable(x, format = "pipe", row.names = FALSE, caption = caption)
+}
+```
+
+# Pytanie analityczne
+
+Jak duża może być roczna strata portfela pięciu hipotetycznych ekspozycji
+kredytowych oraz które założenia i pozycje odpowiadają za jego ryzyko?
+Portfel ma nominał **`r report_number(portfolio$face_usd_million)` mln USD**.
+Ekspozycje to nowe, pięcioletnie obligacje zerokuponowe w modelu; nie są
+zidentyfikowanymi, rzeczywiście zawartymi transakcjami.
+
+Strata oznacza różnicę między wartością portfela po roku **bez migracji
+ratingów** a jego wartością w danym scenariuszu. Nie jest stratą względem
+ceny początkowej ani jednodniową stratą portfela akcji. Ujemne straty są
+zachowanymi zyskami z poprawy wyceny.
+
+```{r}
+#| results: asis
+cat('<div class="metric-grid">')
+metrics <- c(paste0("VaR ", label_alpha), paste0("ES ", label_alpha),
+               "Dokładna oczekiwana strata")
+values <- c(primary$var_usd_million, primary$es_usd_million,
+              portfolio$exact_mean_loss_usd_million)
+for (i in seq_along(metrics)) {
+  cat('<div class="metric"><div class="metric-label">',
+      htmlEscape(metrics[i]), '</div><div class="metric-value">',
+      report_number(values[i]), '</div><div class="metric-unit">mln USD',
+      '</div></div>', sep = "")
+}
+cat('</div>')
+```
+
+**Wspólna data rynkowa:** `r report$metadata$market_observation_date`.
+**Żądana data graniczna analizy:** `r report$metadata$analysis_cutoff`.
+**Scenariusze na wariant:**
+`r format(report$metadata$n_scenarios, big.mark = " ", scientific = FALSE)`.
+Data danych może poprzedzać datę graniczną z powodu harmonogramu publikacji
+krzywej Fed. Raport odtwarza wybrany zapis wyników i nie pobiera nowych notowań.
+
+::: {.callout-important}
+## Status walidacji
+
+Wyniki symulacyjne i tożsamości wyceny są sprawdzane na zapisanych wejściach.
+**Trafność VaR na rzeczywistych przyszłych stratach nie wynika z tych kontroli.**
+Status osobnego backtestu przedstawiono w sekcji „Walidacja VaR”.
+:::
+
+# Dane i założenia
+
+```{r}
+#| label: tbl-portfolio
+#| tbl-cap: "Skład portfela i daty dowodów ratingowych."
+registry <- report$bundle$valuation_inputs$registry
+table_report(data.frame(
+  Emitent = registry$issuer_id,
+  "Rating S&P" = registry$rating_notch,
+  "Grupa modelu" = registry$rating_bucket,
+  "Nominał [mln USD]" = report_number(registry$notional_usd_million),
+  "Udział [%]" = report_number(100 * registry$notional_usd_million /
+                                sum(registry$notional_usd_million)),
+  "Data źródła ratingu" = as.character(registry$rating_source_date),
+  check.names = FALSE
+))
+```
+
+Ratingi są ręcznie przeglądanymi danymi wejściowymi, a daty źródeł nie są datami
+nowych działań ratingowych. Starsze potwierdzenie nie stanowi gwarancji bieżącego
+statusu. Rejestr zachowuje źródła i odrębną datę przeglądu. W szczególności
+dokument dla NetApp może być znacznie starszy niż data analizy.
+
+Krzywa Treasury pochodzi z estymacji GSW Fed, a spready ratingowe z indeksów
+ICE BofA udostępnianych przez FRED. Indeksowy OAS traktujemy jako przybliżony,
+płaski spread ciągły, a nie krzywą zerokuponową konkretnego emitenta.
+Roczna macierz migracji jest historycznym oszacowaniem S&P dla korporacji
+globalnych. Nie jest indywidualną prognozą emitenta ani macierzą neutralną
+względem ryzyka. Polityka NR:
+**`r report$bundle$valuation_inputs$assumptions$nr_policy`**.
+
+Po roku pozostają cztery lata do zapadalności. Dla przeżywających pozycji
+wykorzystujemy deterministyczną stopę forward Treasury i spread stanu
+docelowego. W default odzysk wynosi
+**`r report_number(100 * report$bundle$valuation_inputs$assumptions$recovery_rate, 0)`%**
+nominału, płatne na koniec horyzontu. To jawne założenie, nie oszacowana tutaj
+bieżąca stopa odzysku. Model opiera się na logice migracyjnej CreditMetrics
+[@creditmetrics1997].
+
+## Zależność emitentów
+
+```{r}
+#| label: fig-correlation
+#| fig-cap: "Korelacje wspólnych dziennych zwrotów Adjusted. To przybliżenie zależności latentnej, a nie korelacja niewypłacalności."
+#| fig-width: 7
+#| fig-height: 5
+plot_credit_report_correlation(report)
+```
+
+Korelacje oszacowano na jednej kompletnej próbie, z końcem w dniu wyceny.
+Braki nie są interpolowane, a duże zwroty są oznaczane do przeglądu i zachowane.
+Niepewność estymacji korelacji i jakość korekt dostawcy nie są ujęte w błędzie
+Monte Carlo. Przedziały symulacyjne nie zastępują kontroli źródeł danych.
+
+# Bazowy rozkład strat
+
+```{r}
+#| label: tbl-risk
+#| tbl-cap: "VaR i Expected Shortfall: straty w mln USD."
+base_risk <- report$risk[report$risk$scenario_id == "baseline", ]
+table_report(data.frame(
+  "Poziom [%]" = report_number(100 * base_risk$confidence_level, 1),
+  VaR = report_number(base_risk$var_usd_million),
+  ES = report_number(base_risk$es_usd_million),
+  "VaR: dolny kraniec MC" = report_number(base_risk$var_mc_ci_lower),
+  "VaR: górny kraniec MC" = report_number(base_risk$var_mc_ci_upper),
+  "Przybliżony SE dla ES" = report_number(base_risk$es_mc_se_approx, 3),
+  check.names = FALSE
+))
+```
+
+```{r}
+#| label: fig-loss-tail
+#| fig-cap: "Górny fragment dystrybuanty strat z symulacji. Schodki zachowują masy dyskretne; wykres nie przedstawia rzeczywistych kolejnych okresów."
+#| fig-width: 9
+#| fig-height: 4.8
+plot_credit_report_tail(report)
+```
+
+VaR jest odwrotnością dystrybuanty empirycznej (`quantile(type = 1)`). ES
+obejmuje dokładnie zadaną masę najgorszego ogona, w razie potrzeby wykorzystując
+część scenariuszy równych VaR. Średnia samych strat **ściśle większych** od VaR
+nie jest ogólnie poprawną definicją ES dla takiego rozkładu [@acerbi2002].
+
+Przedziały VaR wynikają z rang dwumianowych. Błąd ES jest przybliżony;
+normalne przedziały ES są pomijane, gdy kwantyl nie jest rozstrzygnięty przez
+przedział rang. Te miary opisują wyłącznie skończoną liczbę losowań przy
+ustalonych danych i modelu. Nie obejmują ryzyka parametrów ani specyfikacji.
+
+## Kto tworzy ryzyko ogona?
+
+```{r}
+#| label: fig-contributions
+#| fig-cap: !expr paste0("Wkłady emitentów do ES ", label_alpha, ". Ich suma jest równa portfelowemu ES.")
+#| fig-width: 9
+#| fig-height: 4.5
+plot_credit_report_contributions(report)
+```
+
+Wkłady wykorzystują te same wagi portfelowego ogona, także na granicy VaR.
+Nie są niezależnie liczonymi ES poszczególnych obligacji. Pozwala to odróżnić
+udział w nominale od udziału w stratach najgorszych scenariuszy.
+
+# Analiza wrażliwości
+
+```{r}
+#| label: fig-stress
+#| fig-cap: !expr paste0("Porównanie ES ", label_alpha, " przy wspólnym budżecie nominału. Rozmiary szoków są przyjętymi założeniami.")
+#| fig-width: 10
+#| fig-height: 6
+plot_credit_report_stress(report)
+```
+
+```{r}
+#| label: tbl-stress
+#| tbl-cap: "Ryzyko i koncentracja przy wybranym poziomie ufności."
+stress <- report$risk[report$risk$confidence_level == alpha, ]
+comparison <- report$comparisons[
+  report$comparisons$confidence_level == alpha, ]
+delta <- comparison$delta_es_percent[match(stress$scenario_id,
+                                            comparison$scenario_id)]
+delta[stress$scenario_id == "baseline"] <- 0
+metrics <- report$portfolios[match(stress$scenario_id,
+                                    report$portfolios$scenario_id), ]
+table_report(data.frame(
+  Wariant = report_scenario_label(stress$scenario_id, report$definitions),
+  VaR = report_number(stress$var_usd_million),
+  ES = report_number(stress$es_usd_million),
+  "Zmiana ES [%]" = report_number(delta, 1),
+  "Oczekiwana strata" = report_number(metrics$exact_mean_loss_usd_million),
+  "HHI nominału" = report_number(metrics$face_hhi, 3),
+  check.names = FALSE
+))
+```
+
+Spready są szokowane dopiero w wycenie na koniec roku. Bazowy punkt odniesienia
+pozostaje stały dla danej alokacji, aby zachować stratę z przeceny także bez
+migracji ratingu. Zmiana odzysku wpływa na default, a mieszanka korelacji
+przesuwa macierz w stronę macierzy samych jedynek, zachowując PSD.
+Macierz migracji pozostaje niezmieniona.
+
+Scenariusze wykorzystują wspólne innowacje losowe. Różnice mają sparowane
+błędy Monte Carlo; redukcja wariancji nie jest gwarantowana przy zmianie
+faktora korelacji. Przedział różnicy ES wymaga rozstrzygnięcia obu kwantyli.
+Wariant łączny jest analizą wrażliwości, nie skalibrowaną prognozą recesji
+ani scenariuszem o oszacowanym prawdopodobieństwie.
+
+```{r}
+#| results: asis
+largest <- stress[which.max(stress$es_usd_million), ]
+cat("Najwyższy ES przy poziomie **", label_alpha, "** występuje w wariancie **",
+    report_scenario_label(largest$scenario_id, report$definitions),
+    "** i wynosi **", report_number(largest$es_usd_million),
+    " mln USD**.\n\n", sep = "")
+if ("equal_face" %in% report$definitions$scenario_id) {
+  equal <- report$risk[report$risk$scenario_id == "equal_face", ]
+  base <- report$risk[report$risk$scenario_id == "baseline", ]
+  difference <- equal$es_usd_million - base$es_usd_million[
+    match(equal$confidence_level, base$confidence_level)]
+  cat("Zmiana na równe nominały zmienia również skład ryzyka ratingowego. ")
+  if (any(difference > 0) && any(difference < 0)) {
+    cat("W tym zapisie ES rośnie na części poziomów ufności, a maleje na ",
+        "innych. Niższy HHI nie oznacza jednolitej poprawy ryzyka.\n\n")
+  } else {
+    cat("Jej ocenę należy oprzeć na wynikach ogona, nie tylko na HHI.\n\n")
+  }
+}
+```
+
+# Kontrole obliczeń
+
+```{r}
+#| label: tbl-diagnostics
+#| tbl-cap: "Dokładna i symulowana średnia straty. Z mierzy różnicę w jednostkach błędu Monte Carlo."
+quality <- report$diagnostics
+table_report(data.frame(
+  Wariant = report_scenario_label(quality$scenario_id, report$definitions),
+  "Średnia dokładna" = report_number(quality$exact_mean_loss_usd_million, 4),
+  "Średnia MC" = report_number(quality$simulated_mean_loss_usd_million, 4),
+  "SE średniej" = report_number(quality$mean_mc_se_usd_million, 4),
+  Z = report_number(quality$mean_error_z, 2),
+  "W granicach 6 SE" = ifelse(quality$mean_within_six_mc_se, "tak", "przegląd"),
+  check.names = FALSE
+))
+```
+
+Tabele raportu są ponownie liczone z zapisanych stanów docelowych i cen
+warunkowych. Sprawdzana jest zgodność strat, punktów odniesienia i sumy wkładów
+ES. Nie korzystają z ręcznie przepisanych wyników. Osobne testy oprogramowania
+obejmują przykłady o znanym wyniku, granice prawdopodobieństw i odtwarzalność.
+Kontrole te nie są testami trafności prognoz na przyszłych danych.
+
+# Walidacja VaR
+
+```{r}
+#| results: asis
+backtest <- report$backtest
+if (is.null(backtest)) {
+  cat('<div class="validation-status"><strong>Backtest na rzeczywistych ',
+      'wynikach: niewykonany.</strong><p>Nie dostarczono szeregu prognoz VaR ',
+      'i późniejszych, porównywalnych strat. Brak wyników testu nie jest ',
+      'pozytywną oceną modelu.</p></div>')
+} else {
+  status <- switch(backtest$outcome_type,
+    observed_portfolio_loss = "Testy na danych oznaczonych jako obserwowane straty",
+    historical_revaluation_proxy = "Testy na historycznej rewaluacji zastępczej",
+    synthetic_example = "Demonstracja na danych syntetycznych")
+  cat('<div class="validation-status"><strong>', htmlEscape(status),
+      '</strong><p>Proweniencja jest deklaracją dostarczonego pliku. ',
+      'Kontrole dat nie dowodzą niezależności wyjątków ani pełnej zgodności ',
+      'historycznych prognoz z bieżącym modelem.</p></div>\n\n', sep = "")
+  result <- backtest$summary
+  print(table_report(data.frame(
+    "VaR [%]" = report_number(100 * result$confidence_level, 1),
+    N = result$n_observations, m = result$n_exceptions,
+    "E[m]" = report_number(result$expected_exceptions, 2),
+    "Próg na ogon [%]" = report_number(100 * result$tail_significance, 1),
+    "P(M ≤ m)" = report_number(result$lower_inclusive_probability, 4),
+    "P(M ≥ m)" = report_number(result$upper_inclusive_probability, 4),
+    "Brak odrzucenia: dwumianowy" =
+      ifelse(result$central_binomial_not_rejected, "tak", "nie"),
+    "p Kupca" = report_number(result$kupiec_p_value, 4),
+    check.names = FALSE
+  )))
+}
+```
+
+## Test wartości rzeczywistych
+
+Dla prognozy wyznaczonej wyłącznie z wcześniejszego okna estymacji sprawdzamy
+w następnym okresie, czy **zrealizowana strata jest większa od VaR**. Przy
+niezależnych wyjątkach i stałej docelowej częstości `p₀ = 1 − α` ich liczba
+`M` w `N` okresach ma rozkład dwumianowy. Dla zaobserwowanego `m` liczymy:
+
+$$p_{dolny}=P(M\leq m),\qquad p_{górny}=P(M\geq m).$$
+
+W opisanej przez autora projektu regule oba prawdopodobieństwa muszą być
+**większe od 5%**. Są to dwa testy jednostronne po 5%, więc łączny poziom
+odrzucenia wynosi najwyżej 10%. Wariant z 2,5% na ogon daje łącznie najwyżej
+5%. Obie konwencje są implementowane; nie są utożsamiane z tą samą regułą.
+
+```{r}
+#| eval: false
+#| echo: true
+p_lower <- pbinom(m, N, 1 - alpha)
+p_upper <- pbinom(m - 1, N, 1 - alpha, lower.tail = FALSE)
+not_rejected <- p_lower > 0.05 && p_upper > 0.05
+```
+
+## Test Kupca i ograniczenia interpretacji
+
+Test Kupca porównuje częstość przekroczeń z zadanym prawdopodobieństwem przez
+iloraz wiarygodności, z asymptotycznym odniesieniem do rozkładu chi-kwadrat
+z jednym stopniem swobody. Nie testuje samodzielnie niezależności wyjątków
+ani wielkości strat po przekroczeniu VaR. Brak odrzucenia, zwłaszcza przy małej
+oczekiwanej liczbie wyjątków, nie potwierdza poprawności modelu
+[@kupiec1995; @rba1997].
+
+W modelu migracyjnym rozkład jest dyskretny. Dla poprawnego kwantyla częstość
+**ścisłych** przekroczeń może być mniejsza niż `1 − α` ze względu na masę
+równą VaR. Test równości z nominalną częstością wymaga więc dodatkowej
+interpretacji; odrzucenie z powodu zbyt małej liczby wyjątków może oznaczać
+konserwatywny kwantyl. Kod zachowuje liczbę remisów i obie strony testu.
+
+Do empirycznego badania tego projektu potrzebne są historyczne prognozy
+rocznego VaR, odtwarzalne dane dostępne w chwili prognozy oraz późniejsze
+roczne straty tych samych ekspozycji i względem tego samego benchmarku.
+Dzienne zwroty akcji służą tutaj tylko do kalibracji zależności i nie są
+rzeczywistą stratą modelowanych obligacji. Nakładające się roczne okresy nie
+tworzą niezależnych prób dwumianowych. Samo zastosowanie kroczącego okna
+estymacji nie rozwiązuje tego problemu.
+
+Przy 20 niezależnych rocznych okresach i VaR 99% oczekiwana liczba wyjątków
+wynosi jedynie 0,2. To przykład ograniczonej informacji testowej, nie wynik
+backtestu tego portfela. Dalsza walidacja wymaga historii ratingów, krzywych,
+odzysków i ekspozycji oraz uzgodnionej metody rzeczywistej lub zastępczej
+rewaluacji. Testy niezależności i odrębna walidacja ES pozostają dalszym zadaniem.
+
+# Odtwarzalność i granice wniosków
+
+Raport utworzono: **`r report$generated_at_utc`**. Zapis stress testów:
+**`r report$metadata$created_at_utc`**. R do raportu:
+**`r report$report_r_version`**. Ziarno symulacji:
+**`r report$metadata$seed`**. Quarto CLI: **`r report$quarto_cli_version`**.
+Plik `input_manifest.csv` obok HTML identyfikuje
+wejścia i szablony. Dokładne dane liczbowe i scenariusze zachowano w RDS.
+
+Wyniki zależą od ręcznego rejestru ratingów, długookresowej macierzy migracji,
+proxy korelacji akcji, stałego odzysku i uproszczonych spreadów. Model nie
+obejmuje losowych przyszłych stóp, płynności, momentu default, opóźnienia
+odzysku ani kryzysowej zmiany wszystkich parametrów. Obecna wersja pokazuje
+odtwarzalną analizę modelową i jej ograniczenia; nie stanowi zwalidowanego
+systemu prognoz ani rekomendacji inwestycyjnej.
+
+# Literatura
