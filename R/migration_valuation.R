@@ -33,6 +33,7 @@ read_valuation_assumptions <- function(path) {
 #' @param transition Named one-year stochastic matrix in credit_states() order.
 #' @param recovery_rate Fixed fraction of face paid at the one-year horizon.
 #' @param horizon_years Must be one: the source migration matrix is annual.
+#' @param horizon_spread_shock_bps Additive horizon-only spread change in bps.
 #' @return State-value matrix, conditional table and issuer/portfolio summaries.
 #' @details At inception V0=N*exp(-(z(T)+s_initial)*T). At horizon h, use
 #'   forward f(h,T)=(T*z(T)-h*z(h))/(T-h) and Vh=N*exp(-(f+s_state)*(T-h)).
@@ -40,7 +41,8 @@ read_valuation_assumptions <- function(path) {
 #'   are not risk-neutral transition intensities. Expected values use physical
 #'   migration probabilities; dependence is irrelevant to this linear mean.
 value_migration_states <- function(registry, curve, spreads, transition,
-                                    recovery_rate = 0.4, horizon_years = 1) {
+                                    recovery_rate = 0.4, horizon_years = 1,
+                                    horizon_spread_shock_bps = 0) {
   validate_transition_matrix(transition)
   if (!is.numeric(recovery_rate) || length(recovery_rate) != 1L ||
       is.na(recovery_rate) || !is.finite(recovery_rate) ||
@@ -48,6 +50,12 @@ value_migration_states <- function(registry, curve, spreads, transition,
       !is.numeric(horizon_years) || length(horizon_years) != 1L ||
       is.na(horizon_years) || horizon_years != 1) {
     stop("Use recovery in [0,1] and the supported one-year horizon.",
+         call. = FALSE)
+  }
+  if (!is.numeric(horizon_spread_shock_bps) ||
+      length(horizon_spread_shock_bps) != 1L ||
+      !is.finite(horizon_spread_shock_bps)) {
+    stop("Use one finite horizon-only spread shock in basis points.",
          call. = FALSE)
   }
   states <- credit_states()
@@ -106,8 +114,9 @@ value_migration_states <- function(registry, curve, spreads, transition,
                                           spreads$rating_bucket)]
   initial_spread <- s[match(registry$rating_bucket, head(states, -1L))]
   initial_value <- face * exp(-(z_t + initial_spread) * maturity)
+  horizon_spread <- s + horizon_spread_shock_bps / 10000
   values <- face * exp(-outer(remaining * forward, rep(1, 7L)) -
-                         outer(remaining, s))
+                         outer(remaining, horizon_spread))
   values <- cbind(values, recovery_rate * face)
   dimnames(values) <- list(registry$issuer_id, states)
   if (any(!is.finite(values)) || any(values < 0) ||

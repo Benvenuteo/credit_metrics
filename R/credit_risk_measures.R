@@ -120,6 +120,10 @@ allocate_credit_es <- function(simulation, valuation, tail_summary) {
   values <- valuation$state_values
   losses <- simulation$losses
   destinations <- simulation$destinations
+  benchmarks <- resolve_credit_loss_benchmark(valuation,
+                                               simulation$benchmark_values)
+  exact_means <- benchmarks -
+    valuation$issuer_summary$expected_value_usd_million
   if (!is.matrix(destinations) || nrow(destinations) != length(losses) ||
       !identical(colnames(destinations), ids)) {
     stop("Scenario state columns must match valuation issuer IDs.",
@@ -130,8 +134,7 @@ allocate_credit_es <- function(simulation, valuation, tail_summary) {
     weights <- credit_tail_weights(losses, row$confidence_level,
                                     row$var_usd_million)
     contributions <- vapply(seq_along(ids), function(i) {
-      one_loss <- valuation$issuer_summary$no_migration_value_usd_million[i] -
-        values[i, destinations[, i]]
+      one_loss <- benchmarks[i] - values[i, destinations[, i]]
       sum(weights * one_loss)
     }, numeric(1))
     if (abs(sum(contributions) - row$es_usd_million) >
@@ -144,10 +147,9 @@ allocate_credit_es <- function(simulation, valuation, tail_summary) {
       es_share = if (row$es_usd_million != 0) {
         contributions / row$es_usd_million
       } else NA_real_,
-      exact_mean_loss_usd_million =
-        valuation$issuer_summary$expected_credit_loss_usd_million,
+      exact_mean_loss_usd_million = unname(exact_means),
       es_above_mean_contribution_usd_million = contributions -
-        valuation$issuer_summary$expected_credit_loss_usd_million
+        unname(exact_means)
     )
   })
   do.call(rbind, rows)

@@ -293,6 +293,29 @@ Generated observations and results remain excluded from Git.
 
 See [model methodology](model_methodology.md) for valuation conventions and
 [simulation methodology](simulation_methodology.md) for dependence, loss and
-uncertainty definitions. Stress comparisons and a portfolio report remain
-subsequent work. More detailed credit term structures, empirical recovery
-calibration and alternative dependence models are further model improvements.
+uncertainty definitions.
+
+## Implemented: fixed-input stress comparisons
+
+Stage 05 reuses one explicitly chosen stage-04 snapshot and verifies baseline
+replay before evaluating stress sensitivities. It does not fetch or claim to
+refresh market data. Dates and the 14-calendar-day freshness limit remain
+explicit; historical replay uses a deliberately selected analysis cutoff.
+
+The archived simulation bundle supplies the numeric valuation inputs,
+correlation, scenario count, seed, risk levels and source metadata. Exact copies
+of that bundle, baseline scenarios and `config/stress_scenarios.csv` are retained
+with fingerprints. Each completed case has its own full-precision valuation,
+fixed issuer benchmarks, correlation, settings, losses and destination states.
+
+The chosen +100 bps, 20% recovery and correlation-mixture sizes are modeling
+sensitivities. They are not downloaded current observations, fitted macro
+forecasts or regulatory scenarios. Original/equal/weakest-group allocations
+refer to hypothetical face amounts. Their common total budget does not imply
+equal inception value or equal risk. Provider-derived inputs and generated
+results remain excluded from Git; tests contain synthetic observations only.
+
+See [stress methodology](stress_methodology.md) for shock timing, benchmark
+consistency, paired Monte Carlo errors and concentration interpretation.
+A portfolio report, more detailed credit term structures, empirical recovery
+calibration and alternative transition/dependence models remain further work.

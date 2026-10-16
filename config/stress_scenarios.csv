@@ -1,0 +1,9 @@
+scenario_id,label,category,correlation_mix,spread_shock_bps,recovery_rate,allocation
+baseline,Baseline,baseline,0,0,0.4,original
+correlation_50,Correlation mix 50%,dependence,0.5,0,0.4,original
+correlation_85,Correlation mix 85%,dependence,0.85,0,0.4,original
+spread_100,Horizon spreads +100 bps,spread,0,100,0.4,original
+recovery_20,Recovery 20%,recovery,0,0,0.2,original
+combined_adverse,Combined sensitivity,combined,0.5,100,0.2,original
+equal_face,Equal face amounts,allocation,0,0,0.4,equal_face
+weakest_50,Weakest rating group at 50% face,allocation,0,0,0.4,weakest_50

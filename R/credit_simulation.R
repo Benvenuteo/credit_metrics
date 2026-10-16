@@ -111,6 +111,26 @@ with_credit_rng <- function(seed, callback) {
   callback()
 }
 
+#' Resolve a named fixed horizon benchmark, retaining valuation checks.
+#' @param benchmark_values Optional named issuer amounts in USD millions.
+resolve_credit_loss_benchmark <- function(valuation, benchmark_values = NULL) {
+  ids <- valuation$issuer_summary$issuer_id
+  if (is.null(benchmark_values)) {
+    benchmark_values <- stats::setNames(
+      valuation$issuer_summary$no_migration_value_usd_million, ids
+    )
+  }
+  if (!is.numeric(benchmark_values) || is.null(names(benchmark_values)) ||
+      anyDuplicated(names(benchmark_values)) ||
+      !setequal(names(benchmark_values), ids) ||
+      length(benchmark_values) != length(ids) ||
+      any(!is.finite(benchmark_values)) || any(benchmark_values < 0)) {
+    stop("Supply one finite non-negative named benchmark per issuer.",
+         call. = FALSE)
+  }
+  benchmark_values[ids]
+}
+
 #' Simulate horizon values using named correlations and physical transitions.
 #' @param valuation Output of value_migration_states().
 #' @param transition Named annual migration matrix.
@@ -118,14 +138,16 @@ with_credit_rng <- function(seed, callback) {
 #' @param n_scenarios Number of independent portfolio scenarios.
 #' @param batch_size Maximum latent-draw batch; full latent draws are not saved.
 #' @param seed Reproducible Mersenne-Twister/Inversion seed.
+#' @param benchmark_values Optional fixed issuer horizon benchmark amounts.
 #' @return Losses, integer destination states, moments and marginal diagnostics.
-#' @details Loss is the no-migration horizon benchmark minus scenario value.
+#' @details Loss is the no-migration horizon benchmark minus scenario value,
+#'   or a supplied fixed benchmark minus scenario value in a sensitivity case.
 #'   Rows consume consecutive random draws, so batch partitioning preserves the
 #'   random sequence. Losses and compact integer states are retained for audit
 #'   and ES allocation; continuous latent draws are summarized then discarded.
 simulate_credit_migrations <- function(
     valuation, transition, correlation, n_scenarios = 1000000L,
-    batch_size = 50000L, seed = 20261016L) {
+    batch_size = 50000L, seed = 20261016L, benchmark_values = NULL) {
   check_simulation_integer(n_scenarios, "n_scenarios", 2L, 50000000L)
   check_simulation_integer(batch_size, "batch_size", 1L, 1000000L)
   check_simulation_integer(seed, "seed", 0L)
@@ -157,7 +179,9 @@ simulate_credit_migrations <- function(
          call. = FALSE)
   }
   n_issuers <- length(ids)
-  benchmark <- sum(summary$no_migration_value_usd_million)
+  issuer_benchmarks <- resolve_credit_loss_benchmark(valuation,
+                                                      benchmark_values)
+  benchmark <- sum(issuer_benchmarks)
   exact_expected_value <- sum(summary$expected_value_usd_million)
   result <- with_credit_rng(seed, function() {
     losses <- numeric(n_scenarios)
@@ -231,6 +255,7 @@ simulate_credit_migrations <- function(
   )
   list(
     losses = result$losses, destinations = result$destinations,
+    benchmark_values = issuer_benchmarks,
     marginal_diagnostics = marginal, diagnostics = diagnostics,
     gaussian = gaussian, latent_correlation = latent_correlation,
     loss_support = c(benchmark - sum(apply(values, 1L, max)),

@@ -5,7 +5,8 @@ credit portfolio risk analysis. Implemented stages import the USD Treasury
 base curve, maintain a sourced issuer register, collect daily equity prices,
 estimate an issuer correlation proxy, value one-year rating migrations, and
 simulate correlated portfolio losses with VaR, Expected Shortfall, Monte Carlo
-uncertainty and issuer ES contributions.
+uncertainty and issuer ES contributions. Implemented stress comparisons cover
+dependence, horizon spreads, recovery and face allocation.
 
 The portfolio design retains five hypothetical five-year zero-coupon exposures
 with a total face value of USD 100 million. These are modeling assumptions,
@@ -226,6 +227,46 @@ normal intervals are omitted when the VaR rank interval spans multiple values.
 See [simulation methodology](docs/simulation_methodology.md) for the formulas,
 precision limits, replay procedure and independent analytical checks.
 
+## Run sensitivity and stress comparisons
+
+After stage 04 in the same R session, run:
+
+```r
+source("tests/test_credit_stress.R")
+source("scripts/05_run_stress_tests.R")
+```
+
+No new package is required. Stage 05 takes the explicit
+`credit_simulation_result$snapshot_dir`. It replays and checks the saved baseline
+before comparing eight cases from `config/stress_scenarios.csv`. It reuses the
+baseline's dates, seed, scenario count, risk levels and numeric market inputs;
+it does not request fresh observations or read newly edited simulation controls.
+
+Default cases are the unchanged baseline, two correlation mixtures toward
+perfect dependence, a +100 bps horizon spread shock, 20% recovery, a combined
+sensitivity, equal face amounts and 50% of face in the weakest rating group.
+Shock sizes are chosen sensitivity assumptions, not estimated crisis forecasts
+or probabilities. Historical migration probabilities remain unchanged.
+
+Spread shocks affect future values while inception prices and the base
+no-migration benchmark remain fixed. This preserves the loss from spread
+widening even when no issuer changes rating. Allocation cases retain total
+face and calculate their own base benchmark at the unchanged market inputs.
+Equal face weights change issuer risk composition as well as concentration;
+a smaller face HHI does not guarantee lower ES at every confidence level.
+
+Each case uses the same underlying normal innovations. Outputs report VaR/ES,
+differences from baseline, paired mean/ES Monte Carlo errors, issuer ES
+contributions, face HHI, maximum face weight and a decomposition of expected
+loss into spread-shock and migration components. Only Monte Carlo uncertainty
+is measured. ES intervals require both quantiles to be resolved.
+
+The new `data/processed/credit_stress/run_.../` directory holds summary CSVs
+and full-precision inputs/scenarios for every case. Exact baseline RDS files
+and stress configuration are copied under `data/raw/credit_stress/run_.../`.
+Old runs are preserved. See [stress methodology](docs/stress_methodology.md)
+for formulas, invariants, interpretation and replay limitations.
+
 ## Validate the implementation
 
 Run the offline checks from the project root:
@@ -235,6 +276,7 @@ source("tests/test_fed_yield_curve.R")
 source("tests/test_issuer_prices.R")
 source("tests/test_migration_valuation.R")
 source("tests/test_credit_simulation.R")
+source("tests/test_credit_stress.R")
 ```
 
 The synthetic fixtures cover source parsing, date cutoffs, stale and incomplete
@@ -251,6 +293,9 @@ limit, same-date market inputs, immutable valuation archives and failure cleanup
 Simulation checks include exact discrete-tail examples, binomial rank coverage,
 independent two-issuer enumeration, singular dependence, probability-zero/one
 states, reproducible batching, RNG restoration, same-date calibration and replay.
+Stress checks verify fixed benchmarks, horizon-only pricing, PSD-preserving
+correlation shocks, allocation budgets, independent shock/ES identities,
+paired uncertainty and complete scenario-archive replay and cleanup.
 
 ## Repository layout
 
@@ -266,22 +311,28 @@ states, reproducible batching, RNG restoration, same-date calibration and replay
 | `R/credit_simulation.R` | Named Gaussian dependence and batched migrations |
 | `R/credit_risk_measures.R` | Discrete VaR/ES, MC uncertainty and allocations |
 | `R/credit_simulation_pipeline.R` | Dated calibration and risk-run archives |
+| `R/credit_stress.R` | Shock definitions, allocation and paired comparisons |
+| `R/credit_stress_pipeline.R` | Baseline replay and immutable stress archives |
 | `config/issuers.csv` | Reviewed issuer inputs and hypothetical portfolio design |
 | `config/transition_source.csv` | Pinned study vintage and review deadline |
 | `config/valuation_assumptions.csv` | Recovery, horizon and NR/spread conventions |
 | `config/simulation_settings.csv` | Scenario count, seed, batching and precision |
 | `config/risk_levels.csv` | Requested VaR/ES confidence levels |
+| `config/stress_scenarios.csv` | Explicit dependence, pricing and allocation cases |
 | `scripts/01_download_yield_curve.R` | First analysis entry point |
 | `scripts/02_download_issuer_prices.R` | Second analysis entry point |
 | `scripts/03_value_migrations.R` | Third analysis entry point |
 | `scripts/04_simulate_credit_risk.R` | Fourth analysis entry point |
+| `scripts/05_run_stress_tests.R` | Fifth analysis entry point |
 | `tests/test_fed_yield_curve.R` | Offline checks using synthetic inputs |
 | `tests/test_issuer_prices.R` | Offline calculations and archive integration checks |
 | `tests/test_migration_valuation.R` | Offline parsing, probability and pricing checks |
 | `tests/test_credit_simulation.R` | Analytical tails and simulation integration |
+| `tests/test_credit_stress.R` | Pricing shocks, fixed benchmarks and paired replay |
 | `docs/data_sources.md` | Sources, units, freshness policy, and limitations |
 | `docs/model_methodology.md` | Equations, loss benchmarks and model assumptions |
 | `docs/simulation_methodology.md` | Dependence, tail formulas and MC uncertainty |
+| `docs/stress_methodology.md` | Stress conventions and comparison interpretation |
 | `data/raw/` | Original source vintages, generated locally |
 | `data/processed/` | Validated curves and provenance, generated locally |
 
@@ -289,8 +340,7 @@ See [data sources and conventions](docs/data_sources.md) for details.
 
 ## Next implementation stages
 
-1. Compare concentration, correlation, spread and recovery stress scenarios.
-   Test more detailed credit curves, recovery evidence and alternative
-   geographic or regime-specific transition calibrations.
-2. Build a Quarto report with assumptions, results and limitations; commit the
+1. Build a Quarto report with assumptions, results and limitations; commit the
    reviewed renv environment and automate offline checks in GitHub Actions.
+2. Compare alternative transition/dependence calibrations, more detailed credit
+   term structures and empirical recovery evidence, with model-risk analysis.

@@ -55,6 +55,10 @@ Positive losses reduce value relative to the **no-migration horizon benchmark**.
 Upgrades can produce negative losses; these are retained. This differs from
 loss relative to current value or a risk-free rolled investment. The saved
 metadata identifies the benchmark so that carry is not mistaken for credit loss.
+An optional named `benchmark_values` argument supports fixed base benchmarks
+in stress cases. The simulator retains these issuer amounts, and ES allocation
+uses them consistently. The baseline default remains the no-migration horizon
+value from the supplied valuation.
 
 The exact mean is available without simulation:
 
@@ -134,7 +138,8 @@ All intervals describe **iid Monte Carlo error conditional on the selected
 model and inputs**. They exclude uncertainty in transition estimation,
 correlation calibration, ratings, recovery, spreads, source revisions and model
 specification. Gaussian dependence does not capture non-Gaussian joint tail
-behavior; an equity proxy and fixed recovery need stress comparisons.
+behavior. The implemented [stress comparisons](stress_methodology.md) vary the
+equity dependence proxy and fixed recovery alongside spreads and allocation.
 
 Convergence outputs use nested prefixes of 10,000, 50,000, 100,000, 500,000 and
 the full sample, removing duplicates or checkpoints above `N`. They are

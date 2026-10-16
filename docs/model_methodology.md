@@ -89,12 +89,18 @@ single discounting period. Required Treasury tenors must exist exactly;
 interpolation/extrapolation is not implicit. Only the annual horizon is
 supported by this stage's one-year matrix.
 
-The code treats `index OAS percent / 100` as an additive continuous spread
+The baseline treats `index OAS percent / 100` as an additive continuous spread
 **approximation**, flat across maturity and frozen at the horizon. This is not
 an exact compounding conversion or a bootstrapped corporate zero curve. Index
 maturity, sector, liquidity and optionality effects limit its interpretation.
 The source spreads are not reordered or forced to be monotonic; the metadata
 records whether their broad-rating order is monotonic.
+
+The stress stage optionally adds `horizon_spread_shock_bps / 10000` to every
+non-default horizon spread. It leaves inception spreads/prices unchanged and
+does not discount the horizon default payment. Its fixed base benchmark is
+separate from the no-migration value under shocked spreads; see
+[stress methodology](stress_methodology.md).
 
 For default:
 
