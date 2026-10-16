@@ -3,8 +3,9 @@
 An ongoing rebuild of an academic CreditMetrics project into a reproducible
 credit portfolio risk analysis. Implemented stages import the USD Treasury
 base curve, maintain a sourced issuer register, collect daily equity prices,
-and estimate an issuer correlation proxy. Portfolio valuation, rating
-migrations, and VaR/Expected Shortfall are subsequent stages.
+estimate an issuer correlation proxy, and value one-year rating migrations.
+Correlated portfolio-loss simulation and VaR/Expected Shortfall are subsequent
+stages.
 
 The portfolio design retains five hypothetical five-year zero-coupon exposures
 with a total face value of USD 100 million. These are modeling assumptions,
@@ -129,6 +130,56 @@ Do not update that date automatically. A renewed review can leave the rating
 and its original source date unchanged. Verify the rating status again before
 publishing final credit-risk results.
 
+## Run one-year migration valuation
+
+From the project root, run:
+
+```r
+# jsonlite may already be installed as a quantmod dependency.
+renv::install(c("xml2", "jsonlite"))
+source("tests/test_migration_valuation.R")
+source("scripts/03_value_migrations.R")
+
+renv::snapshot(prompt = FALSE)
+renv::status()
+```
+
+This entry point downloads fresh Fed and FRED inputs and the pinned S&P annual
+study. It extracts the global one-year matrix, checks its probability totals,
+and applies the explicit NR policy in `config/valuation_assumptions.csv`.
+The full dated source HTML and CSV stay in the local archive. A page-layout
+change or incomplete latest input stops the calculation rather than selecting
+a different table or quietly reusing old data.
+
+Treasury rates and rating spreads are aligned to their latest shared observation
+date. That date can precede the requested cutoff because the Fed publishes on
+a different schedule. Both dates and independent feed freshness remain visible
+in the metadata. No API key is needed.
+
+The result distinguishes current model value, the one-year no-migration
+benchmark, the probability-weighted expected horizon value, credit loss versus
+that benchmark, and total P&L including carry. All amounts are **USD millions**.
+After one year the configured five-year zero-coupon exposures have four years
+remaining. Default pays an assumed fraction of face at the horizon.
+
+The baseline uses a fixed 40% recovery assumption and flat rating-index OAS
+spread proxies. It compares 20%/40%/60% recovery and two explicit NR assumptions.
+These are model choices: index OAS does not supply a bootstrapped issuer credit
+curve, and 40% is not presented as a current empirical recovery estimate.
+The mean is calculated exactly across destination states; dependence is needed
+for the next stage's loss distribution.
+
+Each successful run creates
+`data/processed/migration_valuation/run_.../`, containing conditional valuations,
+issuer/portfolio summaries, sensitivity results, transition audit, market
+inputs and provenance. Its `model_inputs.rds` retains matrix labels, dates and
+full numeric precision for the simulation stage. The console prints the path.
+
+Read [model methodology](docs/model_methodology.md) for equations, benchmarks,
+the NR assumptions and the limitations of the spread/recovery approximations.
+Review `config/transition_source.csv` when a newer annual study is published;
+the pinned descriptor has an explicit review deadline.
+
 ## Validate the implementation
 
 Run the offline checks from the project root:
@@ -136,6 +187,7 @@ Run the offline checks from the project root:
 ```r
 source("tests/test_fed_yield_curve.R")
 source("tests/test_issuer_prices.R")
+source("tests/test_migration_valuation.R")
 ```
 
 The synthetic fixtures cover source parsing, date cutoffs, stale and incomplete
@@ -145,6 +197,10 @@ required for these tests. The issuer checks also exercise rating types and
 review ages, missing rows versus missing values, unequal return intervals,
 the independent Pearson formula, matrix validity, immutable snapshots and
 download failures. The archive integration checks use a synthetic downloader.
+Migration checks cover both public HTML layouts, exclusion of standard
+deviations and later-year tables, explicit NR assumptions, rounding limits,
+absorbing default, forward discounting, recovery bounds, the `PD * LGD * face`
+limit, same-date market inputs, immutable valuation archives and failure cleanup.
 
 ## Repository layout
 
@@ -153,12 +209,21 @@ download failures. The archive integration checks use a synthetic downloader.
 | `R/fed_yield_curve.R` | Reusable import and validation functions |
 | `R/issuer_registry.R` | Rating categories and sourced registry validation |
 | `R/issuer_prices.R` | Price import, alignment, correlation and snapshots |
+| `R/transition_matrix.R` | Dated study parsing and explicit NR/default policies |
+| `R/rating_spreads.R` | FRED OAS parsing and Treasury/spread date alignment |
+| `R/migration_valuation.R` | Conditional values and exact marginal expectations |
+| `R/migration_pipeline.R` | Input retrieval, provenance and valuation snapshots |
 | `config/issuers.csv` | Reviewed issuer inputs and hypothetical portfolio design |
+| `config/transition_source.csv` | Pinned study vintage and review deadline |
+| `config/valuation_assumptions.csv` | Recovery, horizon and NR/spread conventions |
 | `scripts/01_download_yield_curve.R` | First analysis entry point |
 | `scripts/02_download_issuer_prices.R` | Second analysis entry point |
+| `scripts/03_value_migrations.R` | Third analysis entry point |
 | `tests/test_fed_yield_curve.R` | Offline checks using synthetic inputs |
 | `tests/test_issuer_prices.R` | Offline calculations and archive integration checks |
+| `tests/test_migration_valuation.R` | Offline parsing, probability and pricing checks |
 | `docs/data_sources.md` | Sources, units, freshness policy, and limitations |
+| `docs/model_methodology.md` | Equations, loss benchmarks and model assumptions |
 | `data/raw/` | Original source vintages, generated locally |
 | `data/processed/` | Validated curves and provenance, generated locally |
 
@@ -166,13 +231,11 @@ See [data sources and conventions](docs/data_sources.md) for details.
 
 ## Next implementation stages
 
-1. Select and archive a dated S&P transition matrix; handle withdrawn/unrated
-   observations explicitly, validate probability totals and define state order.
-2. Source rating-specific credit spreads and recovery assumptions. Specify
-   valuation at inception and at the one-year horizon, including four remaining
-   years of maturity and a separate default/recovery branch.
-3. Implement correlated migrations, portfolio-loss simulation and discrete-tail
+1. Align the equity correlation sample to the valuation date and implement
+   correlated migrations, portfolio-loss simulation and discrete-tail
    VaR/Expected Shortfall, with analytical checks and Monte Carlo uncertainty.
-4. Compare concentration, correlation, spread and recovery stress scenarios.
-5. Build a Quarto report with assumptions, results and limitations; commit the
+2. Compare concentration, correlation, spread and recovery stress scenarios.
+   Test more detailed credit curves, recovery evidence and alternative
+   geographic or regime-specific transition calibrations.
+3. Build a Quarto report with assumptions, results and limitations; commit the
    reviewed renv environment and automate offline checks in GitHub Actions.

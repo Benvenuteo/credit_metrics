@@ -192,13 +192,85 @@ does not establish historical information availability. True backtests require
 archived vintages and dated rating histories.
 
 Fed and equity sources have different publication schedules. Their individual
-observation dates remain explicit. A common portfolio valuation cutoff and a
-policy for these source lags must be specified before combining them in the
-valuation model.
+observation dates remain explicit. The valuation stage below aligns Treasury
+and OAS dates; the equity sample still needs to be aligned to that market date
+when introducing correlated simulation.
 
-## Remaining data inputs
+## Implemented: dated transition matrix
 
-The latest suitable S&P transition matrix, rating-specific credit spreads,
-documented recovery assumptions, and their respective vintages remain separate
-work items. The implemented importers do not yet supply a complete CreditMetrics
-valuation model or validated portfolio risk results.
+- S&P Global Ratings, 2025 Annual Global Corporate Default And Rating
+  Transition Study, published 2026-03-18.
+- Source URL and manual update policy: `config/transition_source.csv`.
+- Selected table: 21, global corporate average transitions, 1981–2025,
+  **one-year** block. The later-year blocks and parenthesized standard
+  deviations are excluded.
+- Input units: percentages. Preserve the NR column in the published-input
+  archive; choose and audit an explicit modeling policy when removing it.
+- Default is an added absorbing model row. Source percentages are normalized
+  only within a maximum 0.05 percentage-point rounding discrepancy.
+
+The source is a long-run historical pool from the latest pinned annual study,
+not an estimate from 2025 alone or a next-year forecast. The HTML is downloaded
+afresh for each valuation run, but the study vintage is deliberately pinned.
+Check for a newer annual study before its configured review deadline. Both
+source title and date coverage are validated during parsing. Original source
+bytes remain local; provider probability observations are not bundled in Git.
+
+## Implemented: rating-index spread proxies
+
+Provider: ICE Data Indices, LLC, distributed by FRED. Source units are **percent**,
+daily close, not seasonally adjusted. Individual source pages are
+`https://fred.stlouisfed.org/series/<series_id>`.
+
+| Broad bucket | FRED series ID |
+| --- | --- |
+| AAA | `BAMLC0A1CAAA` |
+| AA | `BAMLC0A2CAA` |
+| A | `BAMLC0A3CA` |
+| BBB | `BAMLC0A4CBBB` |
+| BB | `BAMLH0A1HYBB` |
+| B | `BAMLH0A2HYB` |
+| CCC/C proxy | `BAMLH0A3HYC` |
+
+Retrieval uses `https://fred.stlouisfed.org/graph/fredgraph.csv` with explicit
+series IDs and a requested date window. The code applies its own cutoff because
+the returned multi-series history can extend beyond the requested range.
+Missing historical values remain missing. An all-missing calendar row is not
+an observation; a partially missing latest observed row stops the import.
+FRED notes that these ICE series have limited rolling history from April 2026.
+They cannot supply unrestricted historical vintages for backtests.
+
+OAS measures index spreads relative to a Treasury spot curve. Here, percent
+observations divided by 100 approximate additive continuous credit spreads,
+held flat across maturity and frozen at the future horizon. This is a stated
+model approximation, not an exact conversion or a bootstrapped zero curve.
+Index ratings and composition do not identify the five actual issuers' credit
+curves. Do not substitute effective index yields for spreads or add default
+as another yield category.
+
+Index observations are subject to the provider's reuse terms documented on the
+FRED source pages. Generated source/processed observations remain untracked;
+tests and committed example observations are synthetic. Public report data
+selection must account for those terms.
+
+## Implemented: explicit recovery assumption and valuation snapshots
+
+The baseline fixed recovery is 40% of face paid at the one-year horizon, with
+20% and 60% comparisons. This is an assumption recorded in
+`config/valuation_assumptions.csv`, not a newly measured recovery rate or an
+assertion about actual issue seniority. It is separate from every yield/spread
+column. NR handling is also explicit and compared under two policies.
+
+Each valuation run retains raw S&P HTML, raw FRED CSV, exact copies of the three
+configuration files and a reference to the archived Fed vintage. Processed
+outputs include published and modeled transition tables, rounding/NR audits,
+conditional state values, exact expected values, sensitivity results, same-date
+market inputs and source fingerprints. `model_inputs.rds` preserves full
+precision for later simulation. Failed runs remove their partial valuation
+snapshot, while previously successful independent Fed imports remain valid.
+
+See [model methodology](model_methodology.md) for forward discounting, benchmark
+definitions and the treatment of publication lags. Correlated simulation,
+tail-risk validation and a portfolio report remain subsequent work. More
+detailed credit term structures and empirical recovery calibration are further
+model improvements.
